@@ -3,9 +3,9 @@
   "theme": "mint",
   "name": "ServiceStories",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#1B4FEC",
+    "light": "#8EABEC",
+    "dark": "#0C4C8F"
   },
   "favicon": "/favicon.svg",
   "navigation": {
