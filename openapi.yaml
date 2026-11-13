@@ -1,0 +1,74 @@
+openapi: 3.1.0
+
+info:
+  title: Service Stories API
+  version: "1.0"
+  description: Send service tickets to Service Stories and fetch the content it creates.
+
+# Where the API lives. The "Try it" panel lets readers pick one.
+servers:
+  - url: https://api.servicestories.com/api/public/v1
+    description: Production
+  - url: https://api-staging.servicestories.com/api/public/v1
+    description: Staging
+
+# How to log in: every request sends the company's API key in this header.
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: x-api-secret-key
+      description: Your company's API key. Find it in the Service Stories app under Integrations.
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Unauthorized
+        message:
+          type: string
+          example: Invalid API key
+
+# Every endpoint below needs the API key.
+security:
+  - apiKey: []
+
+paths:
+  /me:
+    get:
+      summary: Get current account
+      description: Checks that your API key works. Returns your company and the user who owns the key.
+      operationId: getMe
+      responses:
+        "200":
+          description: Your API key is valid.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    description: ID of the user who owns the key.
+                    example: "42"
+                  companyId:
+                    type: string
+                    example: "7"
+                  companyName:
+                    type: string
+                    example: Acme Plumbing
+                  firstName:
+                    type: string
+                    example: Jane
+                  lastName:
+                    type: string
+                    example: Smith
+        "401":
+          description: The API key is missing or wrong.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
