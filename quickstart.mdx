@@ -1,47 +1,131 @@
 ---
 title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+description: "Check your API key, find a completed job, and fetch its blog post ready to publish."
+keywords: ["quickstart", "getting started", "curl", "blog post"]
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
+This guide takes you from an API key to a blog post you can publish. You use `curl`, but any HTTP client works.
 
 ## Prerequisites
 
-Before you begin, you must have:
+- A User API key. See [Authentication](/authentication) to get one.
+- At least one completed service ticket with a blog story in your company.
 
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
+Save your API key in an environment variable so the examples below can use it:
 
-## Get started
+```bash
+export SS_API_KEY="your-user-api-key"
+```
+
+<Warning>
+  Keep your API key on your server. Never put it in browser code or a public repository.
+</Warning>
+
+## Fetch your first blog post
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+  <Step title="Check your API key">
+    Call `GET /me` to confirm your API key works and see the companies it can access.
 
     ```bash
-    npm install your-package
+    curl https://api.servicestories.com/api/developer/v1/me \
+      -H "x-user-api-key: $SS_API_KEY"
+    ```
+
+    The response lists your user and companies:
+
+    ```json
+    {
+      "id": "108",
+      "firstName": "Sam",
+      "lastName": "Lee",
+      "companies": [
+        { "id": "7", "name": "Acme Plumbing" },
+        { "id": "12", "name": "Northside Auto Repair" }
+      ]
+    }
+    ```
+
+    If you get a `401`, check that you copied the full key and sent it in the `x-user-api-key` header.
+  </Step>
+  <Step title="Pick a company">
+    List the companies your API key can access, then note the `id` of the one you want. You pass it as `companyId` when you list tickets and stories.
+
+    ```bash
+    curl https://api.servicestories.com/api/developer/v1/companies \
+      -H "x-user-api-key: $SS_API_KEY"
     ```
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+  <Step title="Find a ticket with stories">
+    List completed tickets that already have stories for that company:
 
     ```bash
-    your-cli init
+    curl "https://api.servicestories.com/api/developer/v1/service-tickets?companyId=7&hasStories=true" \
+      -H "x-user-api-key: $SS_API_KEY"
     ```
+
+    Note the `id` of a ticket in `items`.
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+  <Step title="Find the ticket's blog story">
+    List the ticket's stories for the blog channel:
 
     ```bash
-    your-cli start
+    curl "https://api.servicestories.com/api/developer/v1/service-stories?companyId=7&ticketId=5012&platform=blog" \
+      -H "x-user-api-key: $SS_API_KEY"
     ```
+
+    The list returns summaries only, without the content. Note the story's `id`.
+  </Step>
+  <Step title="Get the full story">
+    Fetch the story to get its content:
+
+    ```bash
+    curl https://api.servicestories.com/api/developer/v1/service-stories/9031 \
+      -H "x-user-api-key: $SS_API_KEY"
+    ```
+
+    ```json
+    {
+      "id": "9031",
+      "version": 2,
+      "updatedAt": "2026-11-20T15:04:12.000Z",
+      "platform": "blog",
+      "status": "draft",
+      "title": "Why your water heater makes a popping sound",
+      "slug": "why-your-water-heater-makes-a-popping-sound",
+      "contentHtml": "<p>A popping sound usually means sediment has built up...</p>",
+      "featuredImage": "https://api.servicestories.com/api/public/media-assets/331/water-heater.jpg",
+      "seoTitle": "Water heater popping sound | Acme Plumbing",
+      "metaDescription": "Learn what causes a popping water heater and how a flush fixes it.",
+      "structuredData": "{\"@context\":\"https://schema.org\",\"@type\":\"BlogPosting\"}"
+    }
+    ```
+
+    The response above is shortened. See [Get a service story](/api-reference/service-stories/get-a-service-story) for every field.
+  </Step>
+  <Step title="Publish it">
+    Map the fields to your website:
+
+    | Field | Use it as |
+    |---|---|
+    | `title` | The post title |
+    | `contentHtml` | The post body. It doesn't include the `<h1>`, so your site's title isn't repeated. |
+    | `featuredImage` | The featured image. Image URLs are public, so you can link to them or download them. |
+    | `slug` | The post URL |
+    | `seoTitle`, `metaDescription` | The SEO title and meta description |
+    | `structuredData` | JSON-LD as a string. Put it as is in a `<script type="application/ld+json">` tag in the page `<head>`. |
+
+    Reading a story doesn't change it in Service Stories.
   </Step>
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+## Next steps
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
-</Tip>
+<Columns cols={2}>
+  <Card title="Authentication" icon="key" href="/authentication">
+    User API keys, and keeping your key safe.
+  </Card>
+  <Card title="API reference" icon="code" href="/api-reference/service-tickets/generate-stories">
+    Filters, every field, and story generation.
+  </Card>
+</Columns>

@@ -1,0 +1,48 @@
+---
+title: "Authentication"
+description: "Authenticate every request with your User API key in the x-user-api-key header."
+keywords: ["authentication", "api key", "user api key", "x-user-api-key", "401"]
+---
+
+Every request needs a User API key. Send it in the `x-user-api-key` header:
+
+```bash
+curl https://api.servicestories.com/api/developer/v1/me \
+  -H "x-user-api-key: your-user-api-key"
+```
+
+## User API keys
+
+A User API key gives access to every company its user is a member of. Disconnected companies are excluded.
+
+The key follows the user's company memberships. When you add the user to a company, the key can access it right away. When you remove them, the key loses access right away.
+
+To see which companies your key can access, call `GET /me` or `GET /companies`.
+
+### Get a User API key
+
+The Service Stories team issues User API keys. Email [support@servicestories.com](mailto:support@servicestories.com) and tell us which user the key is for.
+
+## What your API key can access
+
+- Your API key can only read the companies it has access to.
+- A company, ticket or story outside those companies returns `404`, as if it doesn't exist.
+- `GET /service-tickets` and `GET /service-stories` require `companyId`. Call `GET /companies` first, then list tickets or stories one company at a time.
+- To start story generation, the user needs the **Editor** role or higher in that company.
+
+## Authentication errors
+
+If the key is missing or invalid, the API returns `401`:
+
+| When | Body |
+|---|---|
+| The `x-user-api-key` header is missing. | `{ "error": "Unauthorized", "message": "Missing API key" }` |
+| The key is unknown, or its user is inactive. | `{ "error": "Unauthorized", "message": "Invalid API key" }` |
+
+## Keep your API key safe
+
+Treat your User API key like a password:
+
+- Call the API from your server only. Never put the key in browser code, a mobile app or a public repository.
+- Store it in an environment variable or a secrets manager.
+- To rotate a key, or if it leaks, email [support@servicestories.com](mailto:support@servicestories.com).

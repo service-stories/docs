@@ -3,27 +3,1035 @@ openapi: 3.1.0
 info:
   title: Service Stories API
   version: "1.0"
-  description: Send service tickets to Service Stories and fetch the content it creates.
+  description: >-
+    Read your companies, completed service tickets and ready-to-publish stories,
+    and start story generation for a ticket.
 
 # Where the API lives. The "Try it" panel lets readers pick one.
 servers:
-  - url: https://api.servicestories.com/api/public/v1
+  - url: https://api.servicestories.com/api/developer/v1
     description: Production
-  - url: https://api-staging.servicestories.com/api/public/v1
+  - url: https://api-staging.servicestories.com/api/developer/v1
     description: Staging
 
-# How to log in: every request sends the company's API key in this header.
+# Every endpoint needs a User API key in the x-user-api-key header.
+security:
+  - userKey: []
+
+tags:
+  - name: Account
+    description: Check your API key and see which companies it can access.
+  - name: Companies
+    description: The companies your API key can access.
+  - name: Service tickets
+    description: Completed jobs, and story generation for a job.
+  - name: Service stories
+    description: Content written from service tickets, ready to publish.
+
+paths:
+  /me:
+    get:
+      tags: [Account]
+      summary: Get current account
+      operationId: getMe
+      description: Checks that your API key works. Returns the user who owns the key and every company they can access.
+      responses:
+        "200":
+          description: Your API key is valid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /companies:
+    get:
+      tags: [Companies]
+      summary: List companies
+      operationId: listCompanies
+      description: >-
+        Lists the companies your API key can access, sorted by `id` (lowest first).
+        Disconnected companies are not included.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: A page of companies.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /companies/{id}:
+    get:
+      tags: [Companies]
+      summary: Get a company
+      operationId: getCompany
+      description: Returns one company and its connected locations.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The company ID.
+          schema:
+            type: string
+            example: "7"
+      responses:
+        "200":
+          description: The company.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Company"
+        "400":
+          description: The company ID isn't a number.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageError"
+              example:
+                message: Invalid company ID
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "404":
+          description: The company doesn't exist, or your API key can't access it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageError"
+              example:
+                message: Company not found
+
+  /service-tickets:
+    get:
+      tags: [Service tickets]
+      summary: List service tickets
+      operationId: listServiceTickets
+      description: >-
+        Lists one company's completed service tickets, newest `completedDate` first.
+        Tickets with the same `completedDate` are ordered by `id` (highest first), so the order is stable.
+        Call `GET /companies` first to find the `companyId`. To get recent jobs, use `dateFrom`.
+        Tickets contain no customer or staff names, emails, or sales totals.
+      parameters:
+        - $ref: "#/components/parameters/CompanyIdQuery"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: locationId
+          in: query
+          description: Only tickets from this location.
+          schema:
+            type: string
+            example: "15"
+        - name: dateFrom
+          in: query
+          description: Only tickets completed on or after this date (`YYYY-MM-DD`).
+          schema:
+            type: string
+            format: date
+            example: "2026-11-01"
+        - name: dateTo
+          in: query
+          description: Only tickets completed on or before this date (`YYYY-MM-DD`).
+          schema:
+            type: string
+            format: date
+            example: "2026-11-30"
+        - name: hasStories
+          in: query
+          description: "`true` for tickets that have stories, `false` for tickets that don't."
+          schema:
+            type: string
+            enum: ["true", "false"]
+      responses:
+        "200":
+          description: A page of service tickets.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceTicketList"
+        "400":
+          $ref: "#/components/responses/ListBadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "404":
+          $ref: "#/components/responses/CompanyNotFound"
+
+  /service-tickets/{id}:
+    get:
+      tags: [Service tickets]
+      summary: Get a service ticket
+      operationId: getServiceTicket
+      description: >-
+        Returns one service ticket and a summary of each of its current stories, one per channel.
+        After you start generation, poll this endpoint until `generationStatus` is no longer `generating`.
+      parameters:
+        - $ref: "#/components/parameters/TicketId"
+      responses:
+        "200":
+          description: The service ticket and its stories.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceTicketDetail"
+        "400":
+          $ref: "#/components/responses/InvalidTicketId"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "404":
+          $ref: "#/components/responses/TicketNotFound"
+
+  /service-tickets/{id}/generate-stories:
+    post:
+      tags: [Service tickets]
+      summary: Generate stories
+      operationId: generateStories
+      description: >-
+        Starts writing stories for a ticket, one for each channel enabled in its company.
+        This follows the same rules as the **Generate** button in the app.
+        You need the Editor role or higher in the ticket's company, and the company needs an active plan.
+        Generation runs in the background: poll `GET /service-tickets/{id}` until `generationStatus`
+        is no longer `generating`. The new stories then appear in `stories`.
+      parameters:
+        - $ref: "#/components/parameters/TicketId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                skipExisting:
+                  type: boolean
+                  default: true
+                  description: Skip channels that already have a story for this ticket. Set to `false` to write them again.
+      responses:
+        "202":
+          description: Generation started.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ticketId, storiesToCreate, status]
+                properties:
+                  ticketId:
+                    type: string
+                    example: "5012"
+                  storiesToCreate:
+                    type: integer
+                    description: How many stories are being written.
+                    example: 3
+                  status:
+                    type: string
+                    enum: [generating]
+        "200":
+          description: Every enabled channel already has a story, so nothing was started.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ticketId, storiesToCreate, message]
+                properties:
+                  ticketId:
+                    type: string
+                    example: "5012"
+                  storiesToCreate:
+                    type: integer
+                    example: 0
+                  message:
+                    type: string
+                    example: No new stories to create
+        "400":
+          description: The ID or body is invalid, or the company has no content channels enabled.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/CodedError"
+              examples:
+                noChannels:
+                  summary: No channels enabled
+                  value:
+                    error: NO_PLATFORMS_ENABLED
+                    message: Enable at least one content channel before generating stories.
+                invalidId:
+                  summary: Invalid ticket ID
+                  value:
+                    message: Invalid ticket ID
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "402":
+          description: >-
+            The ticket's company has no active plan. Only this company is checked, so you can still
+            generate stories for your other companies. Reading companies, tickets and stories
+            doesn't need an active plan.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanRequiredError"
+              examples:
+                planSelectionRequired:
+                  summary: No plan
+                  value:
+                    error_code: PLAN_SELECTION_REQUIRED
+                    message: Please select a plan to continue using the platform
+                    requiresPlanSelection: true
+                trialExpired:
+                  summary: Trial ended
+                  value:
+                    error_code: TRIAL_EXPIRED
+                    message: Your trial has expired. Please select a plan to continue.
+                    requiresPlanSelection: true
+                    trialEndDate: "2026-11-20T00:00:00.000Z"
+                subscriptionExpired:
+                  summary: Plan expired or payment failed
+                  value:
+                    error_code: SUBSCRIPTION_EXPIRED
+                    message: Your subscription has expired or payment failed. Please update your plan.
+                    requiresPlanSelection: true
+                    currentPlanStatus: trialing
+        "403":
+          description: You don't have the Editor role in this company, or the location reached its monthly story limit.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/MessageError"
+                  - $ref: "#/components/schemas/CodedError"
+              examples:
+                noPermission:
+                  summary: Role too low
+                  value:
+                    message: You don't have permission to generate stories for this company.
+                usageLimit:
+                  summary: Usage limit reached
+                  value:
+                    error: USAGE_LIMIT_REACHED
+                    message: This location has reached its monthly story limit. Please upgrade this location's plan to generate more stories.
+        "404":
+          $ref: "#/components/responses/TicketNotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /service-stories:
+    get:
+      tags: [Service stories]
+      summary: List service stories
+      operationId: listServiceStories
+      description: >-
+        Lists one company's story summaries, newest first. Each story appears once, as its latest saved version.
+        Call `GET /companies` first to find the `companyId`.
+        The list doesn't include the story content. To get the content, call
+        `GET /service-stories/{id}` with the story's `id`.
+      parameters:
+        - $ref: "#/components/parameters/CompanyIdQuery"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: ticketId
+          in: query
+          description: Only stories written from this service ticket.
+          schema:
+            type: string
+            example: "5012"
+        - name: locationId
+          in: query
+          description: Only stories from this location.
+          schema:
+            type: string
+            example: "15"
+        - name: platform
+          in: query
+          description: Only stories for this channel, for example `blog`, `website`, `facebook` or `linkedin`.
+          schema:
+            type: string
+            example: blog
+        - name: status
+          in: query
+          description: Only stories with this status.
+          schema:
+            $ref: "#/components/schemas/StoryStatus"
+      responses:
+        "200":
+          description: A page of story summaries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorySummaryList"
+        "400":
+          $ref: "#/components/responses/ListBadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "404":
+          $ref: "#/components/responses/CompanyNotFound"
+
+  /service-stories/{id}:
+    get:
+      tags: [Service stories]
+      summary: Get a service story
+      operationId: getServiceStory
+      description: >-
+        Returns one story with its full content, ready to publish.
+        You always get the latest saved version. The story `id` stays the same when the story is edited;
+        `version` and `updatedAt` show which version you got. If you pass an ID from an older version,
+        you get the latest version, with the story's current `id`.
+        Blog and website stories include HTML and SEO fields; social posts include the post text.
+        Reading a story doesn't change it or mark it as published.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The story ID.
+          schema:
+            type: string
+            example: "9031"
+      responses:
+        "200":
+          description: The story.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/BlogStory"
+                  - $ref: "#/components/schemas/SocialStory"
+              examples:
+                blog:
+                  summary: Blog story
+                  value:
+                    id: "9031"
+                    version: 2
+                    updatedAt: "2026-11-20T15:04:12.000Z"
+                    companyId: "7"
+                    ticketId: "5012"
+                    locationId: "15"
+                    platform: blog
+                    status: draft
+                    title: Why your water heater makes a popping sound
+                    scheduledFor: null
+                    publishedDate: null
+                    author: Jane Smith
+                    images:
+                      - id: "331"
+                        url: https://api.servicestories.com/api/public/media-assets/331/water-heater.jpg
+                        type: image
+                        altText: Technician flushing a water heater tank
+                        displayName: water-heater.jpg
+                    featuredImage: https://api.servicestories.com/api/public/media-assets/331/water-heater.jpg
+                    slug: why-your-water-heater-makes-a-popping-sound
+                    contentHtml: "<p>A popping sound usually means sediment has built up...</p>"
+                    seoTitle: Water heater popping sound | Acme Plumbing
+                    metaDescription: Learn what causes a popping water heater and how a flush fixes it.
+                    structuredData: '{"@context":"https://schema.org","@type":"BlogPosting","headline":"Why your water heater makes a popping sound"}'
+                social:
+                  summary: Social post
+                  value:
+                    id: "9034"
+                    version: 1
+                    updatedAt: "2026-11-21T09:12:40.000Z"
+                    companyId: "7"
+                    ticketId: "5012"
+                    locationId: "15"
+                    platform: facebook
+                    status: scheduled
+                    title: null
+                    scheduledFor: "2026-12-02T15:00:00.000Z"
+                    publishedDate: null
+                    author: Jane Smith
+                    images: []
+                    featuredImage: null
+                    bodyContent: Heard a popping sound from your water heater? Here's what our team found this week...
+                    cta: Book a water heater check today.
+        "400":
+          description: The story ID isn't a number.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageError"
+              example:
+                message: Invalid story ID
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "404":
+          description: The story doesn't exist, or your API key can't access it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageError"
+              example:
+                message: Service story not found
+
 components:
   securitySchemes:
-    apiKey:
+    userKey:
       type: apiKey
       in: header
-      name: x-api-secret-key
-      description: Your company's API key. Find it in the Service Stories app under Integrations.
+      name: x-user-api-key
+      description: >-
+        Your User API key. It can access every company you're a member of, except disconnected ones.
+        The Service Stories team issues it. Treat it like a password.
+
+  parameters:
+    CompanyIdQuery:
+      name: companyId
+      in: query
+      required: true
+      description: >-
+        The company to list from. Call `GET /companies` to find it.
+        Returns 404 if your API key can't access the company.
+      schema:
+        type: string
+        example: "7"
+    Page:
+      name: page
+      in: query
+      description: Page number, starting at 1.
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      name: pageSize
+      in: query
+      description: Items per page. Maximum 100.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 25
+    TicketId:
+      name: id
+      in: path
+      required: true
+      description: The service ticket ID.
+      schema:
+        type: string
+        example: "5012"
+
+  headers:
+    RateLimit-Limit:
+      description: The number of requests allowed in the current window.
+      schema:
+        type: integer
+        example: 120
+    RateLimit-Remaining:
+      description: The number of requests left in the current window.
+      schema:
+        type: integer
+        example: 0
+    RateLimit-Reset:
+      description: Seconds until the current window resets.
+      schema:
+        type: integer
+        example: 42
+
+  responses:
+    BadRequest:
+      description: A query parameter is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ValidationError"
+          example:
+            message: Invalid query parameters
+            errors:
+              - origin: number
+                code: too_big
+                maximum: 100
+                inclusive: true
+                path: [pageSize]
+                message: "Too big: expected number to be <=100"
+    ListBadRequest:
+      description: "`companyId` is missing, or a query parameter is invalid."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ValidationError"
+          examples:
+            companyIdRequired:
+              summary: companyId missing
+              value:
+                message: companyId is required.
+            invalidQuery:
+              summary: Invalid query parameter
+              value:
+                message: Invalid query parameters
+                errors:
+                  - origin: number
+                    code: too_big
+                    maximum: 100
+                    inclusive: true
+                    path: [pageSize]
+                    message: "Too big: expected number to be <=100"
+    InvalidTicketId:
+      description: The ticket ID isn't a number.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/MessageError"
+          example:
+            message: Invalid ticket ID
+    Unauthorized:
+      description: The `x-user-api-key` header is missing, or the key is unknown or belongs to an inactive user.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AuthError"
+          examples:
+            missing:
+              summary: Missing key
+              value:
+                error: Unauthorized
+                message: Missing API key
+            invalid:
+              summary: Invalid key
+              value:
+                error: Unauthorized
+                message: Invalid API key
+    TooManyRequests:
+      description: >-
+        Too many requests. Each API key can make 120 requests per minute, and one IP address can make
+        30 failed requests (401 or 404) in 15 minutes. Wait `RateLimit-Reset` seconds, then retry.
+      headers:
+        RateLimit-Limit:
+          $ref: "#/components/headers/RateLimit-Limit"
+        RateLimit-Remaining:
+          $ref: "#/components/headers/RateLimit-Remaining"
+        RateLimit-Reset:
+          $ref: "#/components/headers/RateLimit-Reset"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/RateLimitError"
+          example:
+            message: Too many requests. Please wait a minute and try again.
+            error_code: RATE_LIMITED
+    CompanyNotFound:
+      description: Your API key can't access the company in `companyId`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/MessageError"
+          example:
+            message: Company not found
+    TicketNotFound:
+      description: The ticket doesn't exist, or your API key can't access it.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/MessageError"
+          example:
+            message: Service ticket not found
 
   schemas:
-    Error:
+    Account:
       type: object
+      required: [id, firstName, lastName, companies]
+      properties:
+        id:
+          type: string
+          description: ID of the user who owns the API key.
+          example: "108"
+        firstName:
+          type: [string, "null"]
+          example: Sam
+        lastName:
+          type: [string, "null"]
+          example: Lee
+        companies:
+          type: array
+          description: Every company the API key can access, sorted by `id`.
+          items:
+            type: object
+            required: [id, name]
+            properties:
+              id:
+                type: string
+                example: "7"
+              name:
+                type: [string, "null"]
+                example: Acme Plumbing
+
+    CompanyList:
+      type: object
+      required: [items, page, pageSize, totalCount, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Company"
+        page:
+          $ref: "#/components/schemas/PageNumber"
+        pageSize:
+          $ref: "#/components/schemas/PageSizeValue"
+        totalCount:
+          $ref: "#/components/schemas/TotalCount"
+        totalPages:
+          $ref: "#/components/schemas/TotalPages"
+      example:
+        items:
+          - id: "7"
+            name: Acme Plumbing
+            websiteUrl: https://acmeplumbing.com
+            locations:
+              - id: "15"
+                name: Downtown
+                city: Denver
+                state: CO
+        page: 1
+        pageSize: 25
+        totalCount: 1
+        totalPages: 1
+
+    ServiceTicketList:
+      type: object
+      required: [items, page, pageSize, totalCount, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServiceTicket"
+        page:
+          $ref: "#/components/schemas/PageNumber"
+        pageSize:
+          $ref: "#/components/schemas/PageSizeValue"
+        totalCount:
+          $ref: "#/components/schemas/TotalCount"
+        totalPages:
+          $ref: "#/components/schemas/TotalPages"
+      example:
+        items:
+          - id: "5012"
+            companyId: "7"
+            locationId: "15"
+            title: Water heater flush and anode replacement
+            summary: Flushed sediment from a 50-gallon tank and replaced a worn anode rod.
+            completedDate: "2026-11-18T21:30:00.000Z"
+            customerConcern: Popping noise from water heater
+            services: [Water heater flush, Anode rod replacement]
+            vehicle: null
+            hasStories: true
+            generationStatus: null
+        page: 1
+        pageSize: 25
+        totalCount: 42
+        totalPages: 2
+
+    StorySummaryList:
+      type: object
+      required: [items, page, pageSize, totalCount, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/StorySummary"
+        page:
+          $ref: "#/components/schemas/PageNumber"
+        pageSize:
+          $ref: "#/components/schemas/PageSizeValue"
+        totalCount:
+          $ref: "#/components/schemas/TotalCount"
+        totalPages:
+          $ref: "#/components/schemas/TotalPages"
+      example:
+        items:
+          - id: "9031"
+            version: 2
+            updatedAt: "2026-11-20T15:04:12.000Z"
+            companyId: "7"
+            ticketId: "5012"
+            locationId: "15"
+            platform: blog
+            status: draft
+            title: Why your water heater makes a popping sound
+            scheduledFor: null
+            publishedDate: null
+        page: 1
+        pageSize: 25
+        totalCount: 42
+        totalPages: 2
+
+    PageNumber:
+      type: integer
+      description: The current page.
+      example: 1
+    PageSizeValue:
+      type: integer
+      description: Items per page.
+      example: 25
+    TotalCount:
+      type: integer
+      description: Total number of items across all pages.
+      example: 42
+    TotalPages:
+      type: integer
+      description: Total number of pages.
+      example: 2
+
+    Location:
+      type: object
+      required: [id, name, city, state]
+      properties:
+        id:
+          type: string
+          example: "15"
+        name:
+          type: [string, "null"]
+          example: Downtown
+        city:
+          type: [string, "null"]
+          example: Denver
+        state:
+          type: [string, "null"]
+          example: CO
+
+    Company:
+      title: Company
+      type: object
+      required: [id, name, websiteUrl, locations]
+      properties:
+        id:
+          type: string
+          example: "7"
+        name:
+          type: [string, "null"]
+          example: Acme Plumbing
+        websiteUrl:
+          type: [string, "null"]
+          example: https://acmeplumbing.com
+        locations:
+          type: array
+          description: Connected locations, sorted by `id`.
+          items:
+            $ref: "#/components/schemas/Location"
+
+    ServiceTicket:
+      type: object
+      required: [id, companyId, locationId, title, summary, completedDate, customerConcern, services, vehicle, hasStories, generationStatus]
+      properties:
+        id:
+          type: string
+          example: "5012"
+        companyId:
+          type: string
+          example: "7"
+        locationId:
+          type: string
+          example: "15"
+        title:
+          type: [string, "null"]
+          example: Water heater flush and anode replacement
+        summary:
+          type: [string, "null"]
+          description: A short AI-written preview of the job.
+          example: Flushed sediment from a 50-gallon tank and replaced a worn anode rod.
+        completedDate:
+          type: [string, "null"]
+          format: date-time
+          example: "2026-11-18T21:30:00.000Z"
+        customerConcern:
+          type: [string, "null"]
+          description: What the customer reported.
+          example: Popping noise from water heater
+        services:
+          type: array
+          description: Names of the services performed.
+          items:
+            type: string
+          example: [Water heater flush, Anode rod replacement]
+        vehicle:
+          description: The vehicle worked on, for auto shops. `null` for other businesses.
+          oneOf:
+            - type: object
+              required: [year, make, model]
+              properties:
+                year:
+                  type: string
+                  example: "2019"
+                make:
+                  type: [string, "null"]
+                  example: Toyota
+                model:
+                  type: string
+                  example: Camry
+            - type: "null"
+        hasStories:
+          type: boolean
+          description: Whether the ticket has at least one story.
+          example: true
+        generationStatus:
+          type: [string, "null"]
+          enum: [generating, failed, null]
+          description: "`generating` while stories are being written, `failed` if the last run failed, otherwise `null`."
+          example: null
+
+    ServiceTicketDetail:
+      allOf:
+        - $ref: "#/components/schemas/ServiceTicket"
+        - type: object
+          required: [stories]
+          properties:
+            stories:
+              type: array
+              description: Summaries of the ticket's current stories, one per channel.
+              items:
+                $ref: "#/components/schemas/StorySummary"
+
+    StoryStatus:
+      type: string
+      enum: [draft, scheduled, published, failed]
+
+    StorySummary:
+      type: object
+      required: [id, version, updatedAt, companyId, ticketId, locationId, platform, status, title, scheduledFor, publishedDate]
+      properties:
+        id:
+          type: string
+          description: The story ID. It stays the same when the story is edited.
+          example: "9031"
+        version:
+          type: integer
+          description: The version number. It goes up by 1 each time the story is saved.
+          example: 2
+        updatedAt:
+          type: string
+          format: date-time
+          description: When the latest version was saved.
+          example: "2026-11-20T15:04:12.000Z"
+        companyId:
+          type: string
+          example: "7"
+        ticketId:
+          type: string
+          example: "5012"
+        locationId:
+          type: string
+          example: "15"
+        platform:
+          type: [string, "null"]
+          description: The channel, for example `blog`, `website`, `facebook` or `linkedin`.
+          example: blog
+        status:
+          $ref: "#/components/schemas/StoryStatus"
+        title:
+          type: [string, "null"]
+          description: The story title. `null` for social posts.
+          example: Why your water heater makes a popping sound
+        scheduledFor:
+          type: [string, "null"]
+          format: date-time
+          example: null
+        publishedDate:
+          type: [string, "null"]
+          format: date-time
+          example: null
+
+    Image:
+      type: object
+      required: [id, url, type, altText, displayName]
+      properties:
+        id:
+          type: string
+          example: "331"
+        url:
+          type: string
+          description: Public URL. You can link to it or download it.
+          example: https://api.servicestories.com/api/public/media-assets/331/water-heater.jpg
+        type:
+          type: string
+          example: image
+        altText:
+          type: [string, "null"]
+          example: Technician flushing a water heater tank
+        displayName:
+          type: string
+          example: water-heater.jpg
+
+    StoryCommon:
+      allOf:
+        - $ref: "#/components/schemas/StorySummary"
+        - type: object
+          required: [author, images, featuredImage]
+          properties:
+            author:
+              type: [string, "null"]
+              example: Jane Smith
+            images:
+              type: array
+              items:
+                $ref: "#/components/schemas/Image"
+            featuredImage:
+              type: [string, "null"]
+              description: URL of the first image, or `null` if the story has none.
+              example: https://api.servicestories.com/api/public/media-assets/331/water-heater.jpg
+
+    BlogStory:
+      title: Blog or website story
+      description: Returned when `platform` is `blog` or `website`.
+      allOf:
+        - $ref: "#/components/schemas/StoryCommon"
+        - type: object
+          required: [slug, contentHtml, seoTitle, metaDescription, structuredData]
+          properties:
+            slug:
+              type: [string, "null"]
+              description: A URL-friendly version of `title`.
+              example: why-your-water-heater-makes-a-popping-sound
+            contentHtml:
+              type: string
+              description: The article body as HTML, without the `<h1>`. Use `title` as the post title.
+              example: "<p>A popping sound usually means sediment has built up...</p>"
+            seoTitle:
+              type: [string, "null"]
+              example: Water heater popping sound | Acme Plumbing
+            metaDescription:
+              type: [string, "null"]
+              example: Learn what causes a popping water heater and how a flush fixes it.
+            structuredData:
+              type: [string, "null"]
+              description: >-
+                JSON-LD as a string, not an object. Put it as is inside
+                `<script type="application/ld+json">` in the page `<head>`.
+              example: '{"@context":"https://schema.org","@type":"BlogPosting"}'
+
+    SocialStory:
+      title: Social post
+      description: Returned for other channels, such as Facebook, LinkedIn and Instagram.
+      allOf:
+        - $ref: "#/components/schemas/StoryCommon"
+        - type: object
+          required: [bodyContent, cta]
+          properties:
+            bodyContent:
+              type: [string, "null"]
+              description: The post text.
+              example: Heard a popping sound from your water heater? Here's what our team found this week...
+            cta:
+              type: [string, "null"]
+              description: The call to action.
+              example: Book a water heater check today.
+
+    AuthError:
+      type: object
+      required: [error, message]
       properties:
         error:
           type: string
@@ -32,43 +1040,75 @@ components:
           type: string
           example: Invalid API key
 
-# Every endpoint below needs the API key.
-security:
-  - apiKey: []
+    MessageError:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          example: Service ticket not found
 
-paths:
-  /me:
-    get:
-      summary: Get current account
-      description: Checks that your API key works. Returns your company and the user who owns the key.
-      operationId: getMe
-      responses:
-        "200":
-          description: Your API key is valid.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  id:
-                    type: string
-                    description: ID of the user who owns the key.
-                    example: "42"
-                  companyId:
-                    type: string
-                    example: "7"
-                  companyName:
-                    type: string
-                    example: Acme Plumbing
-                  firstName:
-                    type: string
-                    example: Jane
-                  lastName:
-                    type: string
-                    example: Smith
-        "401":
-          description: The API key is missing or wrong.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
+    ValidationError:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          example: Invalid query parameters
+        errors:
+          type: array
+          description: Details for each invalid field. Only on validation failures.
+          items:
+            type: object
+
+    CodedError:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          description: A machine-readable error code.
+          example: USAGE_LIMIT_REACHED
+        message:
+          type: string
+
+    RateLimitError:
+      type: object
+      required: [message, error_code]
+      properties:
+        message:
+          type: string
+          example: Too many requests. Please wait a minute and try again.
+        error_code:
+          type: string
+          enum: [RATE_LIMITED]
+          example: RATE_LIMITED
+
+    PlanRequiredError:
+      type: object
+      required: [error_code, message, requiresPlanSelection]
+      properties:
+        error_code:
+          type: string
+          enum: [PLAN_SELECTION_REQUIRED, TRIAL_EXPIRED, SUBSCRIPTION_EXPIRED]
+          description: >-
+            `PLAN_SELECTION_REQUIRED`: the company has no plan.
+            `TRIAL_EXPIRED`: the company's trial has ended.
+            `SUBSCRIPTION_EXPIRED`: the plan is canceled, past due or unpaid.
+          example: PLAN_SELECTION_REQUIRED
+        message:
+          type: string
+          example: Please select a plan to continue using the platform
+        requiresPlanSelection:
+          type: boolean
+          description: Always `true`.
+          example: true
+        trialEndDate:
+          type: string
+          format: date-time
+          description: When the trial ended. Only with `TRIAL_EXPIRED`.
+          example: "2026-11-20T00:00:00.000Z"
+        currentPlanStatus:
+          type: string
+          description: The status of the company's current plan. Only with `SUBSCRIPTION_EXPIRED`.
+          example: trialing

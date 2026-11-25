@@ -1,0 +1,161 @@
+---
+title: "Errors and pagination"
+description: "Status codes the API returns, rate limits, and how to page through list endpoints."
+keywords: ["errors", "status codes", "rate limits", "429", "pagination", "page", "pageSize", "404", "401"]
+---
+
+## Errors
+
+The API uses standard HTTP status codes. Error bodies are JSON with a `message`.
+
+| Status | When | Example body |
+|---|---|---|
+| `400` | An ID, query parameter or body field is invalid, or `companyId` is missing on a list endpoint. | `{ "message": "companyId is required." }` |
+| `401` | The `x-user-api-key` header is missing, or the key is unknown or its user is inactive. See [Authentication](/authentication). | `{ "error": "Unauthorized", "message": "Invalid API key" }` |
+| `402` | Story generation: the company has no active plan. See [Plan errors](#plan-errors). | `{ "error_code": "PLAN_SELECTION_REQUIRED", "message": "...", "requiresPlanSelection": true }` |
+| `403` | Story generation: you don't have the **Editor** role in that company, or the location reached its monthly story limit. | `{ "error": "USAGE_LIMIT_REACHED", "message": "..." }` |
+| `404` | The item doesn't exist, or your API key can't access it. | `{ "message": "Service ticket not found" }` |
+| `429` | You went over a rate limit. See [Rate limits](#rate-limits). | `{ "message": "Too many requests. Please wait a minute and try again.", "error_code": "RATE_LIMITED" }` |
+
+<Note>
+  The API returns `404`, not `403`, for items outside your API key's companies. This way, an API key can't tell whether an item it can't access exists.
+</Note>
+
+### Plan errors
+
+Generating stories needs an active plan in the ticket's company. If the plan isn't active, `POST /service-tickets/{id}/generate-stories` returns `402` with one of these codes:
+
+| `error_code` | When | Extra field |
+|---|---|---|
+| `PLAN_SELECTION_REQUIRED` | The company has no plan. | None |
+| `TRIAL_EXPIRED` | The company's trial has ended. | `trialEndDate` (ISO 8601) |
+| `SUBSCRIPTION_EXPIRED` | The plan is canceled, past due or unpaid. | `currentPlanStatus` |
+
+Every plan error has `error_code`, `message` and `"requiresPlanSelection": true`:
+
+<CodeGroup>
+
+```json No plan
+{
+  "error_code": "PLAN_SELECTION_REQUIRED",
+  "message": "Please select a plan to continue using the platform",
+  "requiresPlanSelection": true
+}
+```
+
+```json Trial ended
+{
+  "error_code": "TRIAL_EXPIRED",
+  "message": "Your trial has expired. Please select a plan to continue.",
+  "requiresPlanSelection": true,
+  "trialEndDate": "2026-11-20T00:00:00.000Z"
+}
+```
+
+```json Plan expired
+{
+  "error_code": "SUBSCRIPTION_EXPIRED",
+  "message": "Your subscription has expired or payment failed. Please update your plan.",
+  "requiresPlanSelection": true,
+  "currentPlanStatus": "trialing"
+}
+```
+
+</CodeGroup>
+
+- Each company is checked on its own. One company without an active plan doesn't stop you from generating stories for your other companies.
+- Only story generation needs an active plan. You can still read companies, tickets and stories.
+
+### Validation errors
+
+On a `400` caused by an invalid query or body, `errors` lists each problem:
+
+```json
+{
+  "message": "Invalid query parameters",
+  "errors": [
+    {
+      "origin": "number",
+      "code": "too_big",
+      "maximum": 100,
+      "inclusive": true,
+      "path": ["pageSize"],
+      "message": "Too big: expected number to be <=100"
+    }
+  ]
+}
+```
+
+## Rate limits
+
+The API limits how many requests you can make:
+
+| Limit | Applies to | Window |
+|---|---|---|
+| 120 requests | Each User API key | 1 minute |
+| 30 failed requests (`401` or `404`) | Each IP address | 15 minutes |
+
+When you go over a limit, the API returns `429` until the window resets:
+
+```json
+{
+  "message": "Too many requests. Please wait a minute and try again.",
+  "error_code": "RATE_LIMITED"
+}
+```
+
+Every response includes these headers:
+
+| Header | Description |
+|---|---|
+| `RateLimit-Limit` | The number of requests allowed in the current window. |
+| `RateLimit-Remaining` | The number of requests left in the current window. |
+| `RateLimit-Reset` | Seconds until the current window resets. |
+
+<Tip>
+  When you get a `429`, wait the number of seconds in `RateLimit-Reset`, then retry the request.
+</Tip>
+
+Story generation also has a separate limit: each company's plan sets how many stories it can generate. Going over it returns `403` with `USAGE_LIMIT_REACHED`, not `429`.
+
+## Pagination
+
+List endpoints return one page at a time. Use these query parameters:
+
+| Parameter | Default | Description |
+|---|---|---|
+| `page` | `1` | The page number, starting at 1. |
+| `pageSize` | `25` | Items per page. The maximum is `100`; a larger value returns `400`. |
+
+Every list response has the same shape: `items` first, then the page details. For example, `GET /service-stories`:
+
+```json
+{
+  "items": [
+    {
+      "id": "9031",
+      "version": 2,
+      "updatedAt": "2026-11-20T15:04:12.000Z",
+      "companyId": "7",
+      "ticketId": "5012",
+      "locationId": "15",
+      "platform": "blog",
+      "status": "draft",
+      "title": "Why your water heater makes a popping sound",
+      "scheduledFor": null,
+      "publishedDate": null
+    }
+  ],
+  "page": 1,
+  "pageSize": 25,
+  "totalCount": 42,
+  "totalPages": 2
+}
+```
+
+To get every item, request `page=1`, then increase `page` until it equals `totalPages`:
+
+```bash
+curl "https://api.servicestories.com/api/developer/v1/service-stories?companyId=7&page=2&pageSize=100" \
+  -H "x-user-api-key: $SS_API_KEY"
+```

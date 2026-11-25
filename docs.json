@@ -1,7 +1,7 @@
 {
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
-  "name": "ServiceStories",
+  "name": "Service Stories",
   "colors": {
     "primary": "#1B4FEC",
     "light": "#8EABEC",
@@ -14,10 +14,12 @@
         "tab": "Guides",
         "groups": [
           {
-            "group": "Getting Started",
+            "group": "Get started",
             "pages": [
               "index",
-              "quickstart"
+              "quickstart",
+              "authentication",
+              "errors-and-pagination"
             ]
           }
         ]
@@ -26,37 +28,24 @@
         "tab": "API Reference",
         "openapi": "openapi.yaml"
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
+    ]
   },
   "logo": {
     "light": "/logo/light.png",
-    "dark": "/logo/dark.png"
+    "dark": "/logo/dark.png",
+    "href": "https://servicestories.com/"
   },
   "navbar": {
     "links": [
       {
         "label": "Support",
-        "href": "mailto:support@mintlify.com"
+        "href": "mailto:support@servicestories.com"
       }
     ],
     "primary": {
       "type": "button",
-      "label": "Dashboard",
-      "href": "https://app.mintlify.com"
+      "label": "Open app",
+      "href": "https://portal.servicestories.com/"
     }
   },
   "contextual": {
@@ -73,10 +62,9 @@
   },
   "footer": {
     "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
+      "website": "https://servicestories.com/",
+      "linkedin": "https://www.linkedin.com/company/service-stories/"
     }
   },
-  "description": "ServiceStories API allows users to programmatically engage with the platform, generating stories, leveraging MCP to operate the platform and manage as they see fit."
+  "description": "Use the Service Stories API to read your companies, completed service tickets and ready-to-publish stories, and to start story generation."
 }
